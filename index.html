@@ -1550,22 +1550,21 @@ document.getElementById("btn-lang").addEventListener("click", () => {
   applyLang();
 });
 
-// ── INTEGRACIÓN AUTOMÁTICA MONDAY.COM ─────────────────────────────────────────
+// ── INTEGRACIÓN MONDAY.COM (DATOS SINCRONIZADOS SEGUROS) ──────────────────────
 
 const MONDAY_BOARD_ID = "18432754378";
 const MONDAY_API_URL  = "https://api.monday.com/v2";
-const MONDAY_TOKEN_DEFAULT = "eyJhbGciOiJIUzI1NiJ9.eyJ0aWQiOjcwODYzNzc0NSwiYWFpIjoxMSwidWlkIjo1NDU2ODM2NywiaWFkIjoiMjAyNi0wOS0yOVQwMTo0Mzo0NC4yMDdaIiwicGVyIjoibWU6d3JpdGUiLCJhY3RpZCI6MTM1MzY5ODEsInJnbiI6InVzZTEifQ.k47gcDOK1VFkNgFKqKgvyqe9KHRvMHHnY6tosTJh_6A";
 
 function getMondayToken() {
-  return localStorage.getItem("monday_token") || MONDAY_TOKEN_DEFAULT;
+  return localStorage.getItem("monday_token") || "";
 }
 function getMondayBoardId() {
   return localStorage.getItem("monday_board_id") || MONDAY_BOARD_ID;
 }
 
 function configurarTokenSeguro() {
-  const actual = localStorage.getItem("monday_token") || MONDAY_TOKEN_DEFAULT;
-  const nuevoToken = prompt("Ingresa o cambia tu Monday API Token:", actual);
+  const actual = localStorage.getItem("monday_token") || "";
+  const nuevoToken = prompt("Ingresa tu Monday API Token (opcional para consultas directas):", actual);
   if (nuevoToken !== null && nuevoToken.trim() !== "") {
     localStorage.setItem("monday_token", nuevoToken.trim());
     cargarDesdeMondayAPI();
