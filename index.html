@@ -153,11 +153,17 @@ footer{margin-top:28px;padding-top:12px;border-top:1px solid #e5e7eb;text-align:
   </div>
 </div>
 
-<!-- ZONA DE CARGA EXCEL -->
-<div style="background:white;padding:10px 18px;border-radius:10px;border:1px solid #e5e7eb;margin-bottom:16px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-  <span style="font-size:13px;font-weight:600;color:#1f2328">🔗 Fuente de datos:</span>
-  <span id="upload-desc-auto" style="font-size:12px;color:#57606a">⏳ Conectando con Monday.com…</span>
-  <span class="file-status" id="file-status"></span>
+<!-- ZONA DE CARGA EXCEL / MONDAY -->
+<div style="background:white;padding:10px 18px;border-radius:10px;border:1px solid #e5e7eb;margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
+  <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+    <span style="font-size:13px;font-weight:600;color:#1f2328">🔗 Fuente de datos:</span>
+    <span id="upload-desc-auto" style="font-size:12px;color:#57606a">⏳ Conectando con Monday.com…</span>
+    <span class="file-status" id="file-status"></span>
+  </div>
+  <div style="display:flex;align-items:center;gap:8px">
+    <button class="btn btn-out" style="padding:4px 10px;font-size:11px" onclick="abrirConfigMonday()">⚙️ Configurar Monday</button>
+    <button class="btn btn-out" style="padding:4px 10px;font-size:11px" onclick="cargarDesdeMondayAPI()">🔄 Recargar</button>
+  </div>
   <input type="file" id="file-input" accept=".xlsx,.xls" style="display:none">
   <p id="upload-desc-manual" style="display:none;font-size:11px;color:#57606a;margin:0"></p>
 </div>
@@ -944,20 +950,49 @@ function render() {
   renderGraficas(vis);
 }
 
-// ── ESCRITURA EN MONDAY.COM A TRAVÉS DEL BACKEND ───────────────────────────────
+// ── ESCRITURA EN MONDAY.COM (DIRECTA / BACKEND) ───────────────────────────────
 
-// Envía la actualización al backend (/api/update-cell) con feedback visual
 async function writeMondayCell(mondayId, columnId, value, feedbackEl) {
   if (!mondayId || !columnId) return;
+  const token = getMondayToken();
+  const boardId = getMondayBoardId();
+
   try {
     if (feedbackEl) feedbackEl.style.outline = "2px solid #f59e0b";
-    const res = await fetch("/api/update-cell", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ itemId: mondayId, columnId, value })
-    });
-    const json = await res.json();
-    if (!res.ok || json.error) throw new Error(json.error || `HTTP ${res.status}`);
+
+    if (token) {
+      // Escritura directa vía API de Monday con el token configurado
+      const valueStr = JSON.stringify(JSON.stringify(value));
+      const mutation = `mutation {
+        change_column_value(
+          item_id: ${mondayId},
+          board_id: ${boardId},
+          column_id: "${columnId}",
+          value: ${valueStr}
+        ) { id }
+      }`;
+      const res = await fetch(MONDAY_API_URL, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": token,
+          "API-Version": "2024-01"
+        },
+        body: JSON.stringify({ query: mutation })
+      });
+      const json = await res.json();
+      if (json.errors && json.errors.length) throw new Error(json.errors[0].message);
+    } else {
+      // Fallback a servidor local backend
+      const res = await fetch("/api/update-cell", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ itemId: mondayId, columnId, value })
+      });
+      const json = await res.json();
+      if (!res.ok || json.error) throw new Error(json.error || `HTTP ${res.status}`);
+    }
+
     if (feedbackEl) { feedbackEl.style.outline = "2px solid #28a745"; setTimeout(()=>{ feedbackEl.style.outline=""; }, 1500); }
   } catch(err) {
     console.error("Error al actualizar campo en Monday:", err.message);
@@ -1516,7 +1551,32 @@ document.getElementById("btn-lang").addEventListener("click", () => {
   applyLang();
 });
 
-// ── BACKEND API INTEGRATION ───────────────────────────────────────────────────
+// ── INTEGRACIÓN MONDAY.COM (WEB & BACKEND) ────────────────────────────────────
+
+const DEFAULT_BOARD_ID = "18432754378";
+const DEFAULT_TOKEN = "eyJhbGciOiJIUzI1NiJ9.eyJ0aWQiOjcwODYzNzc0NSwiYWFpIjoxMSwidWlkIjo1NDU2ODM2NywiaWFkIjoiMjAyNi0wOS0yOVQwMTo0Mzo0NC4yMDdaIiwicGVyIjoibWU6d3JpdGUiLCJhY3RpZCI6MTM1MzY5ODEsInJnbiI6InVzZTEifQ.k47gcDOK1VFkNgFKqKgvyqe9KHRvMHHnY6tosTJh_6A";
+const MONDAY_API_URL = "https://api.monday.com/v2";
+
+function getMondayToken() {
+  return localStorage.getItem("monday_token") || DEFAULT_TOKEN;
+}
+function getMondayBoardId() {
+  return localStorage.getItem("monday_board_id") || DEFAULT_BOARD_ID;
+}
+
+function abrirConfigMonday() {
+  const currentToken = getMondayToken();
+  const currentBoard = getMondayBoardId();
+  const nuevoToken = prompt("Ingresa o actualiza tu Monday API Token:", currentToken);
+  if (nuevoToken !== null && nuevoToken.trim() !== "") {
+    localStorage.setItem("monday_token", nuevoToken.trim());
+  }
+  const nuevoBoard = prompt("Ingresa el Monday Board ID (ej: 18432754378):", currentBoard);
+  if (nuevoBoard !== null && nuevoBoard.trim() !== "") {
+    localStorage.setItem("monday_board_id", nuevoBoard.trim());
+  }
+  cargarDesdeMondayAPI();
+}
 
 // Mapea el label de estado de Monday al valor interno del dashboard
 function normalizarEstadoMonday(label) {
@@ -1547,17 +1607,61 @@ async function cargarDesdeMondayAPI() {
   const descManual = document.getElementById("upload-desc-manual");
   const status     = document.getElementById("file-status");
 
-  descAuto.innerHTML = `⏳ Conectando con el servidor Backend y <strong>Monday.com</strong>…`;
+  descAuto.innerHTML = `⏳ Conectando con <strong>Monday.com</strong>…`;
   descAuto.style.color = "#57606a";
 
-  try {
-    const res = await fetch("/api/activities");
-    if (!res.ok) throw new Error("HTTP " + res.status);
-    const json = await res.json();
+  const token = getMondayToken();
+  const boardId = getMondayBoardId();
 
-    if (json.error) throw new Error(json.error);
-    const items = json.items;
-    if (!items || !items.length) throw new Error("El tablero no tiene items o no se pudo cargar.");
+  try {
+    let items = [];
+
+    // Intento 1: Conexión directa a Monday API usando el token
+    if (token && boardId) {
+      const query = `{
+        boards(ids: ${boardId}) {
+          name
+          items_page(limit: 500) {
+            items {
+              id
+              name
+              group { title }
+              column_values {
+                id
+                text
+                column { title }
+              }
+            }
+          }
+        }
+      }`;
+      const res = await fetch(MONDAY_API_URL, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": token,
+          "API-Version": "2024-01"
+        },
+        body: JSON.stringify({ query })
+      });
+      if (res.ok) {
+        const json = await res.json();
+        if (json.data && json.data.boards && json.data.boards[0]) {
+          items = json.data.boards[0].items_page.items;
+        }
+      }
+    }
+
+    // Intento 2: Backend local si la llamada directa no arrojó items
+    if (!items || !items.length) {
+      const resBackend = await fetch("/api/activities");
+      if (resBackend.ok) {
+        const jsonB = await resBackend.json();
+        items = jsonB.items || [];
+      }
+    }
+
+    if (!items || !items.length) throw new Error("No se pudieron obtener items del tablero.");
 
     const nuevos = items.map(item => {
       const cv = item.column_values || [];
