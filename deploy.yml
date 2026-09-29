@@ -1,49 +1,54 @@
-name: Deploy Dashboard a GitHub Pages
+name: Sync Monday Data and Deploy to GitHub Pages
 
-# Se activa cada vez que se hace push a la rama main
-# Incluyendo cuando se sube un nuevo archivo en data/
 on:
+  schedule:
+    # Sincronización automática cada 15 minutos de lunes a viernes
+    - cron: '*/15 * * * 1-5'
   push:
     branches:
       - main
-  # También permite dispararlo manualmente desde la interfaz de GitHub
   workflow_dispatch:
 
-# Permisos necesarios para escribir en GitHub Pages
 permissions:
-  contents: read
+  contents: write
   pages: write
   id-token: write
 
-# Solo un deploy a la vez
 concurrency:
   group: "pages"
   cancel-in-progress: false
 
 jobs:
-  deploy:
+  sync-and-deploy:
     runs-on: ubuntu-latest
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
 
     steps:
-      # 1. Descargar el código del repositorio
-      - name: Checkout
+      - name: Checkout Repository
         uses: actions/checkout@v4
 
-      # 2. Configurar GitHub Pages
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Fetch Live Data from Monday.com (Using Protected Secret)
+        env:
+          MONDAY_TOKEN: ${{ secrets.MONDAY_TOKEN }}
+          MONDAY_BOARD_ID: "18432754378"
+        run: |
+          node server/sync.js
+
       - name: Setup Pages
         uses: actions/configure-pages@v4
 
-      # 3. Subir todo el contenido del repositorio como artefacto
-      - name: Upload artifact
+      - name: Upload Pages Artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          # Sube todo el directorio raíz (index.html + data/cierre.xlsx)
           path: '.'
 
-      # 4. Publicar en GitHub Pages
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
