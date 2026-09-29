@@ -1595,108 +1595,101 @@ function colText(columnValues, ...titles) {
   return "";
 }
 
-async function cargarDesdeMondayAPI() {
+// ── CARGA PRINCIPAL DEL DASHBOARD ─────────────────────────────────────────────
+async function cargarDatosDashboard() {
   const descAuto   = document.getElementById("upload-desc-auto");
   const descManual = document.getElementById("upload-desc-manual");
   const status     = document.getElementById("file-status");
 
-  descAuto.innerHTML = `⏳ Conectando con <strong>Monday.com</strong>…`;
+  descAuto.innerHTML = `⏳ Sincronizando datos con <strong>Monday.com</strong>…`;
   descAuto.style.color = "#57606a";
 
-  const token = getMondayToken();
-  const boardId = getMondayBoardId();
-
+  // 1. Prioridad: Cargar datos generados de forma segura por GitHub Actions / Backend
   try {
-    let items = [];
-    let errorDetalle = "";
+    const res = await fetch("data/cierre.json", { cache: "no-cache" });
+    if (res.ok) {
+      const json = await res.json();
+      if (json.actividades && json.actividades.length > 0) {
+        normalizarDatos(json.actividades);
+        DATA = json.actividades;
+        reconstruirFiltros();
+        render();
 
-    // Intento 1: Conexión directa a Monday API usando el token
-    if (token && boardId) {
-      const query = `{
-        boards(ids: ${boardId}) {
-          name
-          items_page(limit: 500) {
-            items {
-              id
-              name
-              group { title }
-              column_values {
-                id
-                text
-                column { title }
-              }
-            }
-          }
-        }
-      }`;
-      const res = await fetch(MONDAY_API_URL, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": token,
-          "API-Version": "2024-01"
-        },
-        body: JSON.stringify({ query })
-      });
-      if (res.ok) {
-        const json = await res.json();
-        if (json.errors && json.errors.length) {
-          errorDetalle = json.errors[0].message;
-        } else if (json.data && json.data.boards && json.data.boards[0]) {
-          items = json.data.boards[0].items_page.items;
-        }
-      } else {
-        errorDetalle = `HTTP ${res.status}`;
+        const fUpdate = json.updatedAt ? new Date(json.updatedAt).toLocaleString("es-CO", { dateStyle: "medium", timeStyle: "short" }) : "";
+        descAuto.innerHTML = `✅ Datos en vivo desde <strong>Monday.com</strong> — <strong>${json.actividades.length} actividades</strong> · <span style="font-size:10px;color:#57606a">${fUpdate}</span>
+          <span style="margin-left:8px;font-size:11px;cursor:pointer;color:#3b82d4" onclick="cargarDatosDashboard()">🔃 Actualizar</span>`;
+        descAuto.style.color = "#1a7a35";
+        status.style.display = "inline-block";
+        status.className = "file-status";
+        status.textContent = `✓ Monday.com — ${json.actividades.length} actividades`;
+        descManual.style.display = "none";
+        return;
       }
     }
+  } catch(e) {}
 
-    // Intento 2: Backend local si la llamada directa no arrojó items
-    if (!items || !items.length) {
-      try {
-        const resBackend = await fetch("/api/activities");
-        if (resBackend.ok) {
-          const jsonB = await resBackend.json();
-          items = jsonB.items || [];
-        }
-      } catch(e) {}
+  // 2. Si no hay JSON aún, intentar backend local
+  try {
+    const resBackend = await fetch("/api/activities");
+    if (resBackend.ok) {
+      const jsonB = await resBackend.json();
+      if (jsonB.items && jsonB.items.length) {
+        procesarItemsMonday(jsonB.items);
+        return;
+      }
     }
+  } catch(e) {}
 
-    if (!items || !items.length) throw new Error(errorDetalle || "No se pudieron obtener datos del tablero. Verifica el Token y el Board ID.");
+  // 3. Si el usuario ingresó un token privado en su navegador, intentar consulta directa
+  const token = getMondayToken();
+  if (token) {
+    try {
+      await cargarDesdeMondayDirecto(token);
+      return;
+    } catch(e) {}
+  }
 
-    const nuevos = items.map(item => {
-      const cv = item.column_values || [];
+  // 4. Fallback al Excel del repositorio
+  autoCargarDesdeRepo(true);
+}
 
-      const estRaw  = colText(cv, "Estatus Cierre","Estatus","Estado","Status","Estatus_Cierre","estado");
-      const diaRaw  = colText(cv, "Dia","Día","DIA","Day","dia");
-      const opRaw   = colText(cv, "Operación","Operacion","Operation","OPERACION","operacion");
-      const respRaw = colText(cv, "Responsable","RESPONSABLE","Owner","Person","responsable","Assignee");
-      const areaRaw = colText(cv, "Areas","Área","Area","AREA","AREAS","area");
-      const paisRaw = colText(cv, "PAISES","Paises","País","Pais","PAIS","Country","pais");
-      const tipoRaw = colText(cv, "Estatus Entregable","Tipo","TIPO","Deliverable Status","Cierre_Tipo","entregable");
-      const comRaw  = colText(cv, "Comentarios","Comentario","Comments","Comment","COMENTARIOS","comentario","Notes","notes");
+function procesarItemsMonday(items) {
+  const descAuto = document.getElementById("upload-desc-auto");
+  const status   = document.getElementById("file-status");
+  const descManual = document.getElementById("upload-desc-manual");
 
-      // Guardar el ID de Monday y los IDs de columna para poder escribir de vuelta
-      const colIds = {};
-      cv.forEach(c => {
-        if (c.column && c.column.title) colIds[c.column.title.trim()] = c.id;
-      });
+  const nuevos = items.map(item => {
+    const cv = item.column_values || [];
+    const estRaw  = colText(cv, "Estatus Cierre","Estatus","Estado","Status","Estatus_Cierre","estado");
+    const diaRaw  = colText(cv, "Dia","Día","DIA","Day","dia");
+    const opRaw   = colText(cv, "Operación","Operacion","Operation","OPERACION","operacion");
+    const respRaw = colText(cv, "Responsable","RESPONSABLE","Owner","Person","responsable","Assignee");
+    const areaRaw = colText(cv, "Areas","Área","Area","AREA","AREAS","area");
+    const paisRaw = colText(cv, "PAISES","Paises","País","Pais","PAIS","Country","pais");
+    const tipoRaw = colText(cv, "Estatus Entregable","Tipo","TIPO","Deliverable Status","Cierre_Tipo","entregable");
+    const comRaw  = colText(cv, "Comentarios","Comentario","Comments","Comment","COMENTARIOS","comentario","Notes","notes");
 
-      return {
-        n:         item.name.trim(),
-        mondayId:  item.id,          // ID del item en Monday
-        colIds,                       // mapa título→columnId
-        dia:  diaRaw !== "" ? (isNaN(Number(diaRaw)) ? null : Number(diaRaw)) : null,
-        op:   opRaw.trim(),
-        est:  normalizarEstadoMonday(estRaw),
-        resp: respRaw.trim(),
-        area: areaRaw.trim() || (item.group ? item.group.title : ""),
-        pais: paisRaw.trim(),
-        tipo: tipoRaw.trim(),
-        com:  comRaw.trim(),
-      };
-    }).filter(d => d.n);
+    const colIds = {};
+    cv.forEach(c => {
+      if (c.column && c.column.title) colIds[c.column.title.trim()] = c.id;
+    });
 
-    if (!nuevos.length) throw new Error("Sin items válidos en el tablero.");
+    return {
+      n:         item.name.trim(),
+      mondayId:  item.id,
+      colIds,
+      dia:  diaRaw !== "" ? (isNaN(Number(diaRaw)) ? null : Number(diaRaw)) : null,
+      op:   opRaw.trim(),
+      est:  normalizarEstadoMonday(estRaw),
+      resp: respRaw.trim(),
+      area: areaRaw.trim() || (item.group ? item.group.title : ""),
+      pais: paisRaw.trim(),
+      tipo: tipoRaw.trim(),
+      com:  comRaw.trim(),
+    };
+  }).filter(d => d.n);
+
+  if (nuevos.length > 0) {
     normalizarDatos(nuevos);
     DATA = nuevos;
     reconstruirFiltros();
@@ -1704,49 +1697,51 @@ async function cargarDesdeMondayAPI() {
 
     const ahora = new Date().toLocaleString("es-CO", { dateStyle: "medium", timeStyle: "short" });
     descAuto.innerHTML = `✅ Datos en vivo desde <strong>Monday.com</strong> — <strong>${nuevos.length} actividades</strong> · <span style="font-size:10px;color:#57606a">${ahora}</span>
-      <span style="margin-left:8px;font-size:11px;cursor:pointer;color:#3b82d4" onclick="cargarDesdeMondayAPI()">🔃 Actualizar</span>`;
+      <span style="margin-left:8px;font-size:11px;cursor:pointer;color:#3b82d4" onclick="cargarDatosDashboard()">🔃 Actualizar</span>`;
     descAuto.style.color = "#1a7a35";
     status.style.display = "inline-block";
     status.className = "file-status";
     status.textContent = `✓ Monday.com — ${nuevos.length} actividades`;
     descManual.style.display = "none";
-
-  } catch(err) {
-    console.warn("Monday.com direct fetch error:", err.message, "— intentando carga desde datos sincronizados...");
-    // Intentar cargar data/cierre.json (generado automáticamente por GitHub Actions) o Excel
-    cargarDesdeDatosSincronizados(err.message);
   }
 }
 
-// ── CARGA SEGURA DESDE DATOS SINCRONIZADOS (data/cierre.json) ────────────────
-async function cargarDesdeDatosSincronizados(errMsg) {
-  const descAuto   = document.getElementById("upload-desc-auto");
-  const descManual = document.getElementById("upload-desc-manual");
-  const status     = document.getElementById("file-status");
+async function cargarDesdeMondayDirecto(token) {
+  const query = `{
+    boards(ids: ${getMondayBoardId()}) {
+      name
+      items_page(limit: 500) {
+        items {
+          id
+          name
+          group { title }
+          column_values {
+            id text
+            column { title }
+          }
+        }
+      }
+    }
+  }`;
+  const res = await fetch(MONDAY_API_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": token,
+      "API-Version": "2024-01"
+    },
+    body: JSON.stringify({ query })
+  });
+  if (!res.ok) throw new Error("HTTP " + res.status);
+  const json = await res.json();
+  if (json.errors && json.errors.length) throw new Error(json.errors[0].message);
+  const items = json.data && json.data.boards && json.data.boards[0] ? json.data.boards[0].items_page.items : [];
+  if (!items.length) throw new Error("Sin items");
+  procesarItemsMonday(items);
+}
 
-  try {
-    const res = await fetch("data/cierre.json", { cache: "no-cache" });
-    if (!res.ok) throw new Error("No hay datos JSON aún");
-    const json = await res.json();
-    if (!json.actividades || !json.actividades.length) throw new Error("Sin actividades en JSON");
-
-    normalizarDatos(json.actividades);
-    DATA = json.actividades;
-    reconstruirFiltros();
-    render();
-
-    const fUpdate = json.updatedAt ? new Date(json.updatedAt).toLocaleString("es-CO", { dateStyle: "medium", timeStyle: "short" }) : "";
-    descAuto.innerHTML = `✅ Datos sincronizados con <strong>Monday.com</strong> — <strong>${json.actividades.length} actividades</strong> · <span style="font-size:10px;color:#57606a">${fUpdate}</span>
-      <span style="margin-left:8px;font-size:11px;cursor:pointer;color:#3b82d4" onclick="cargarDesdeMondayAPI()">🔃 Actualizar</span>`;
-    descAuto.style.color = "#1a7a35";
-    status.style.display = "inline-block";
-    status.className = "file-status";
-    status.textContent = `✓ Monday.com (Sync) — ${json.actividades.length} actividades`;
-    descManual.style.display = "none";
-  } catch(e) {
-    // Si aún no se ha generado el JSON, recurrir a autoCargarDesdeRepo
-    autoCargarDesdeRepo(true);
-  }
+function cargarDesdeMondayAPI() {
+  cargarDatosDashboard();
 }
 
 // ── AUTO-CARGA DESDE data/cierre.xlsx (GitHub Pages) ────────────────────────
