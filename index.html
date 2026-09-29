@@ -1615,6 +1615,7 @@ async function cargarDesdeMondayAPI() {
 
   try {
     let items = [];
+    let errorDetalle = "";
 
     // Intento 1: Conexión directa a Monday API usando el token
     if (token && boardId) {
@@ -1646,22 +1647,28 @@ async function cargarDesdeMondayAPI() {
       });
       if (res.ok) {
         const json = await res.json();
-        if (json.data && json.data.boards && json.data.boards[0]) {
+        if (json.errors && json.errors.length) {
+          errorDetalle = json.errors[0].message;
+        } else if (json.data && json.data.boards && json.data.boards[0]) {
           items = json.data.boards[0].items_page.items;
         }
+      } else {
+        errorDetalle = `HTTP ${res.status}`;
       }
     }
 
     // Intento 2: Backend local si la llamada directa no arrojó items
     if (!items || !items.length) {
-      const resBackend = await fetch("/api/activities");
-      if (resBackend.ok) {
-        const jsonB = await resBackend.json();
-        items = jsonB.items || [];
-      }
+      try {
+        const resBackend = await fetch("/api/activities");
+        if (resBackend.ok) {
+          const jsonB = await resBackend.json();
+          items = jsonB.items || [];
+        }
+      } catch(e) {}
     }
 
-    if (!items || !items.length) throw new Error("No se pudieron obtener items del tablero.");
+    if (!items || !items.length) throw new Error(errorDetalle || "No se pudieron obtener datos del tablero. Verifica el Token y el Board ID.");
 
     const nuevos = items.map(item => {
       const cv = item.column_values || [];
@@ -1713,15 +1720,15 @@ async function cargarDesdeMondayAPI() {
 
   } catch(err) {
     console.warn("Monday.com API error:", err.message, "— usando fallback Excel.");
-    descAuto.innerHTML = `⚠️ No se pudo conectar con Monday.com (${err.message}). Intentando <code>data/cierre.xlsx</code>…`;
-    descAuto.style.color = "#e6a800";
+    descAuto.innerHTML = `⚠️ No se pudo conectar con Monday.com (${err.message}). <button class="btn btn-out" style="padding:2px 8px;font-size:11px;margin-left:6px" onclick="abrirConfigMonday()">Configurar Token</button> <span style="margin-left:8px;font-size:11px;cursor:pointer;color:#3b82d4" onclick="cargarDesdeMondayAPI()">🔃 Reintentar</span>`;
+    descAuto.style.color = "#c9510c";
     // Fallback al Excel del repositorio
-    autoCargarDesdeRepo();
+    autoCargarDesdeRepo(true);
   }
 }
 
 // ── AUTO-CARGA DESDE data/cierre.xlsx (GitHub Pages) ────────────────────────
-async function autoCargarDesdeRepo() {
+async function autoCargarDesdeRepo(silencioso = false) {
   const descAuto   = document.getElementById("upload-desc-auto");
   const descManual = document.getElementById("upload-desc-manual");
   const status     = document.getElementById("file-status");
@@ -1783,11 +1790,12 @@ async function autoCargarDesdeRepo() {
     descManual.style.display = "none";
 
   } catch(err) {
-    // Fallback: mostrar formulario manual con mensaje explicativo
-    descAuto.innerHTML = `ℹ️ No se encontró <code>data/cierre.xlsx</code> en el repositorio. Usa el botón para cargar un archivo local.`;
-    descAuto.style.color = "#57606a";
-    descManual.style.display = "block";
-    // Inicializar con datos de ejemplo
+    if (!silencioso) {
+      descAuto.innerHTML = `ℹ️ No se encontró <code>data/cierre.xlsx</code>. <span style="margin-left:8px;font-size:11px;cursor:pointer;color:#3b82d4" onclick="cargarDesdeMondayAPI()">🔃 Conectar Monday</span>`;
+      descAuto.style.color = "#57606a";
+    }
+    descManual.style.display = "none";
+    // Inicializar con datos precargados si no hay nada
     reconstruirFiltros();
     render();
   }
