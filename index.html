@@ -1713,10 +1713,39 @@ async function cargarDesdeMondayAPI() {
     descManual.style.display = "none";
 
   } catch(err) {
-    console.warn("Monday.com API error:", err.message, "— usando fallback Excel.");
-    descAuto.innerHTML = `⚠️ No se pudo conectar con Monday.com (${err.message}). <button class="btn btn-out" style="padding:2px 8px;font-size:11px;margin-left:6px" onclick="configurarTokenSeguro()">Ingresar Token</button> <span style="margin-left:8px;font-size:11px;cursor:pointer;color:#3b82d4" onclick="cargarDesdeMondayAPI()">🔃 Reintentar</span>`;
-    descAuto.style.color = "#c9510c";
-    // Fallback al Excel del repositorio
+    console.warn("Monday.com direct fetch error:", err.message, "— intentando carga desde datos sincronizados...");
+    // Intentar cargar data/cierre.json (generado automáticamente por GitHub Actions) o Excel
+    cargarDesdeDatosSincronizados(err.message);
+  }
+}
+
+// ── CARGA SEGURA DESDE DATOS SINCRONIZADOS (data/cierre.json) ────────────────
+async function cargarDesdeDatosSincronizados(errMsg) {
+  const descAuto   = document.getElementById("upload-desc-auto");
+  const descManual = document.getElementById("upload-desc-manual");
+  const status     = document.getElementById("file-status");
+
+  try {
+    const res = await fetch("data/cierre.json", { cache: "no-cache" });
+    if (!res.ok) throw new Error("No hay datos JSON aún");
+    const json = await res.json();
+    if (!json.actividades || !json.actividades.length) throw new Error("Sin actividades en JSON");
+
+    normalizarDatos(json.actividades);
+    DATA = json.actividades;
+    reconstruirFiltros();
+    render();
+
+    const fUpdate = json.updatedAt ? new Date(json.updatedAt).toLocaleString("es-CO", { dateStyle: "medium", timeStyle: "short" }) : "";
+    descAuto.innerHTML = `✅ Datos sincronizados con <strong>Monday.com</strong> — <strong>${json.actividades.length} actividades</strong> · <span style="font-size:10px;color:#57606a">${fUpdate}</span>
+      <span style="margin-left:8px;font-size:11px;cursor:pointer;color:#3b82d4" onclick="cargarDesdeMondayAPI()">🔃 Actualizar</span>`;
+    descAuto.style.color = "#1a7a35";
+    status.style.display = "inline-block";
+    status.className = "file-status";
+    status.textContent = `✓ Monday.com (Sync) — ${json.actividades.length} actividades`;
+    descManual.style.display = "none";
+  } catch(e) {
+    // Si aún no se ha generado el JSON, recurrir a autoCargarDesdeRepo
     autoCargarDesdeRepo(true);
   }
 }
