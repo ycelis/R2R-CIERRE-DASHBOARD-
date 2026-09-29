@@ -161,7 +161,6 @@ footer{margin-top:28px;padding-top:12px;border-top:1px solid #e5e7eb;text-align:
     <span class="file-status" id="file-status"></span>
   </div>
   <div style="display:flex;align-items:center;gap:8px">
-    <button class="btn btn-out" style="padding:4px 10px;font-size:11px" onclick="abrirConfigMonday()">⚙️ Configurar Monday</button>
     <button class="btn btn-out" style="padding:4px 10px;font-size:11px" onclick="cargarDesdeMondayAPI()">🔄 Recargar</button>
   </div>
   <input type="file" id="file-input" accept=".xlsx,.xls" style="display:none">
@@ -1551,31 +1550,24 @@ document.getElementById("btn-lang").addEventListener("click", () => {
   applyLang();
 });
 
-// ── INTEGRACIÓN MONDAY.COM (WEB & BACKEND) ────────────────────────────────────
+// ── INTEGRACIÓN MONDAY.COM ────────────────────────────────────────────────────
 
-const DEFAULT_BOARD_ID = "18432754378";
-const DEFAULT_TOKEN = "eyJhbGciOiJIUzI1NiJ9.eyJ0aWQiOjcwODYzNzc0NSwiYWFpIjoxMSwidWlkIjo1NDU2ODM2NywiaWFkIjoiMjAyNi0wOS0yOVQwMTo0Mzo0NC4yMDdaIiwicGVyIjoibWU6d3JpdGUiLCJhY3RpZCI6MTM1MzY5ODEsInJnbiI6InVzZTEifQ.k47gcDOK1VFkNgFKqKgvyqe9KHRvMHHnY6tosTJh_6A";
-const MONDAY_API_URL = "https://api.monday.com/v2";
+const MONDAY_BOARD_ID = "18432754378";
+const MONDAY_API_URL  = "https://api.monday.com/v2";
 
 function getMondayToken() {
-  return localStorage.getItem("monday_token") || DEFAULT_TOKEN;
+  return localStorage.getItem("monday_token") || "";
 }
 function getMondayBoardId() {
-  return localStorage.getItem("monday_board_id") || DEFAULT_BOARD_ID;
+  return localStorage.getItem("monday_board_id") || MONDAY_BOARD_ID;
 }
 
-function abrirConfigMonday() {
-  const currentToken = getMondayToken();
-  const currentBoard = getMondayBoardId();
-  const nuevoToken = prompt("Ingresa o actualiza tu Monday API Token:", currentToken);
+function configurarTokenSeguro() {
+  const nuevoToken = prompt("Ingresa tu Monday API Token (se guardará de forma privada en tu navegador):", "");
   if (nuevoToken !== null && nuevoToken.trim() !== "") {
     localStorage.setItem("monday_token", nuevoToken.trim());
+    cargarDesdeMondayAPI();
   }
-  const nuevoBoard = prompt("Ingresa el Monday Board ID (ej: 18432754378):", currentBoard);
-  if (nuevoBoard !== null && nuevoBoard.trim() !== "") {
-    localStorage.setItem("monday_board_id", nuevoBoard.trim());
-  }
-  cargarDesdeMondayAPI();
 }
 
 // Mapea el label de estado de Monday al valor interno del dashboard
@@ -1720,7 +1712,7 @@ async function cargarDesdeMondayAPI() {
 
   } catch(err) {
     console.warn("Monday.com API error:", err.message, "— usando fallback Excel.");
-    descAuto.innerHTML = `⚠️ No se pudo conectar con Monday.com (${err.message}). <button class="btn btn-out" style="padding:2px 8px;font-size:11px;margin-left:6px" onclick="abrirConfigMonday()">Configurar Token</button> <span style="margin-left:8px;font-size:11px;cursor:pointer;color:#3b82d4" onclick="cargarDesdeMondayAPI()">🔃 Reintentar</span>`;
+    descAuto.innerHTML = `⚠️ No se pudo conectar con Monday.com (${err.message}). <button class="btn btn-out" style="padding:2px 8px;font-size:11px;margin-left:6px" onclick="configurarTokenSeguro()">Ingresar Token</button> <span style="margin-left:8px;font-size:11px;cursor:pointer;color:#3b82d4" onclick="cargarDesdeMondayAPI()">🔃 Reintentar</span>`;
     descAuto.style.color = "#c9510c";
     // Fallback al Excel del repositorio
     autoCargarDesdeRepo(true);
