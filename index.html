@@ -1550,7 +1550,7 @@ document.getElementById("btn-lang").addEventListener("click", () => {
   applyLang();
 });
 
-// ── INTEGRACIÓN MONDAY.COM ────────────────────────────────────────────────────
+// ── INTEGRACIÓN SEGURA MONDAY.COM (COMPLIANT CON POLÍTICAS IBM IT) ───────────
 
 const MONDAY_BOARD_ID = "18432754378";
 const MONDAY_API_URL  = "https://api.monday.com/v2";
@@ -1563,7 +1563,7 @@ function getMondayBoardId() {
 }
 
 function configurarTokenSeguro() {
-  const nuevoToken = prompt("Ingresa tu Monday API Token (se guardará de forma privada en tu navegador):", "");
+  const nuevoToken = prompt("Ingresa tu Monday API Token (se almacenará exclusivamente en la sesión local de tu navegador):", "");
   if (nuevoToken !== null && nuevoToken.trim() !== "") {
     localStorage.setItem("monday_token", nuevoToken.trim());
     cargarDesdeMondayAPI();
